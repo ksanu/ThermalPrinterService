@@ -39,8 +39,8 @@ class ParagonApplicationTests {
 		PrintService printService = PrinterOutputStream.getPrintServiceByName(printerName);
 		PrinterOutputStream printerOutputStream = new PrinterOutputStream(printService);
 		EscPos escpos = new EscPos(printerOutputStream);
-		escpos.writeLF("Hello world");
-		escpos.feed(5).cut(EscPos.CutMode.FULL);
+		//escpos.writeLF("Hello world");
+		//escpos.feed(5).cut(EscPos.CutMode.FULL);
 		escpos.close();
 	}
 }

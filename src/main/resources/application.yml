@@ -3,4 +3,7 @@ server.port: 8080
 
 paragon:
   printerName: POS-58-Series
-  maxCharsInLine: 31
+  maxCharsInLine: 32
+  title: "Polecam - Joanna Plebaniak"
+  qrIntro: "Zapraszam na stronę:"
+  qrData: "https://www.facebook.com/polecam.joanna.plebaniak"

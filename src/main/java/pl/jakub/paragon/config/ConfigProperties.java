@@ -10,4 +10,7 @@ import org.springframework.context.annotation.Configuration;
 public class ConfigProperties {
     private String printerName;
     private Integer maxCharsInLine;
+    private String title;
+    private String qrIntro;
+    private String qrData;
 }

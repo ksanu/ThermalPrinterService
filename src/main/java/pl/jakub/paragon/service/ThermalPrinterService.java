@@ -20,6 +20,7 @@ import com.github.anastaciocintra.output.PrinterOutputStream;
 import com.github.anastaciocintra.escpos.barcode.QRCode;
 
 import java.io.IOException;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -41,11 +42,14 @@ public class ThermalPrinterService {
 
     ArrayList<ArrayList<Object>> discardEmpty(ArrayList<ArrayList<Object>> data){
         ArrayList<ArrayList<Object>> result = new ArrayList<>();
+        List<String> forbidden = List.of("false", "true", "Czy zrealizowane?", "Czy odebrane?", "Uwagi:", "Lista produktów:", "Cena:", "Imię i Nazwisko:");
         for(ArrayList<Object> range : data) {
-            if(range.size() >=1 && range.get(0).toString().length() > 0) {
-                result.add(range);
-            }else if(range.size() >= 2 && range.get(1).toString().length() > 0) {
-                result.add(range);
+            if(!(range.size() >= 1 && forbidden.contains(range.get(0).toString()) || range.size() >= 2 && forbidden.contains(range.get(1).toString()))) {
+                if (range.size() >= 1 && range.get(0).toString().length() > 0) {
+                    result.add(range);
+                } else if (range.size() >= 2 && range.get(1).toString().length() > 0) {
+                    result.add(range);
+                }
             }
         }
         log.info("non empty data: {}", result);
@@ -115,8 +119,27 @@ public class ThermalPrinterService {
                 .setBold(true);
 
         for(ArrayList<String> headerPair : headers){
-            escpos.writeLF(subtitle, headerPair.get(0) + ": ")
-                    .writeLF(boldSubtitle, headerPair.get(1));
+            String left = headerPair.get(0);
+            if(!(left.endsWith(":") || left.endsWith(": ")))
+                left += ": ";
+            String right = headerPair.get(1);
+            if(left.length() + right.length() <= (properties.getMaxCharsInLine()/2)){
+                escpos.writeLF(subtitle, left)
+                        .writeLF(boldSubtitle, right);
+            }else{
+                escpos.writeLF(subtitle, left);
+                boolean isFirst = true;
+                for(String substring : right.split(" ")){
+                    if(isFirst){
+                        printOneLine(escpos, substring, "", boldSubtitle, 2);
+                        isFirst=false;
+                    }else {
+                        printOneLine(escpos, "", substring, boldSubtitle, 2);
+                    }
+                }
+
+            }
+
         }
         return escpos;
     }
@@ -139,6 +162,15 @@ public class ThermalPrinterService {
             spaces.append(" ");
         }
         escpos.writeLF(style, left + spaces + right);
+    }
+
+    private void printOneLine(EscPos escpos, String left, String right, Style style, int charWidth) throws IOException {
+        int spacesNum = (properties.getMaxCharsInLine()/charWidth) - left.length() - right.length();
+        StringBuilder spaces = new StringBuilder();
+        while(spaces.length() < spacesNum){
+            spaces.append(" ");
+        }
+        escpos.write(style, left + spaces + right);
     }
 
     public void print(ArrayList<ArrayList<Object>> data){
@@ -168,7 +200,7 @@ public class ThermalPrinterService {
                     .setJustification(EscPosConst.Justification.Center);
 
             Style subtitle = new Style(escpos.getStyle())
-                    .setBold(true)
+                    //.setBold(true)
                     .setUnderline(Style.Underline.OneDotThick);
             Style bold = new Style(escpos.getStyle())
                     .setBold(true);
@@ -183,13 +215,13 @@ public class ThermalPrinterService {
             escpos.setPrinterCharacterTable(18);
 
 
-            escpos.writeLF(title,"Polecam - Joanna Plebaniak")
-                    .feed(2);
-            printHeaders(escpos,headers)
-                    .feed(2);
-            printProducts(escpos, values)
-                    .writeLF("--------------------------------")
+            escpos.writeLF(title,properties.getTitle())
                     .feed(1);
+            printHeaders(escpos,headers)
+                    .feed(1);
+            escpos.writeLF(subtitle, "Zamówienie:").feed(1);
+            printProducts(escpos, values)
+                    .writeLF("--------------------------------");
             printOneLineProduct(escpos, "SUMA: ",String.format("%.2f zł", valuesSum), boldLeft);
             escpos.writeLF("--------------------------------")
                     .feed(1);
@@ -197,23 +229,15 @@ public class ThermalPrinterService {
             //qr code:
             QRCode qrcode = new QRCode();
 
-            escpos.writeLF("Zapraszam na stronę: ");
+            escpos.writeLF(properties.getQrIntro());
             escpos.feed(1);
             qrcode.setSize(7);
             qrcode.setJustification(EscPosConst.Justification.Center);
-            escpos.write(qrcode, "https://www.facebook.com/polecam.joanna.plebaniak");
+            escpos.write(qrcode, properties.getQrData());
             escpos.feed(4);
 
 
-//                    .write("Client: ")
-//                    .writeLF(subtitle, "John Doe")
-//                    .feed(2)
-//                    .writeLF("Cup of coffee                      $1.00")
-//                    .writeLF("Botle of water                     $0.50")
-//                    .writeLF("---------------------------------------------")
-//                    .feed(1)
-//
-            escpos.cut(EscPos.CutMode.FULL);
+            //escpos.cut(EscPos.CutMode.FULL); doesn't work on our printer
             escpos.close();
 
         } catch (IOException ex) {
