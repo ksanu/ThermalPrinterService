@@ -3,17 +3,23 @@ package pl.jakub.paragon.service;
 import com.github.anastaciocintra.escpos.EscPos;
 import com.github.anastaciocintra.output.PrinterOutputStream;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import pl.jakub.paragon.ParagonApplication;
 import pl.jakub.paragon.config.ConfigProperties;
 
 import javax.print.PrintService;
-import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
+import com.github.anastaciocintra.escpos.EscPos;
+import com.github.anastaciocintra.escpos.EscPosConst;
+import com.github.anastaciocintra.escpos.Style;
+import com.github.anastaciocintra.output.PrinterOutputStream;
+import com.github.anastaciocintra.escpos.barcode.QRCode;
+
+import java.io.IOException;
 
 @Slf4j
 @Service
@@ -30,33 +36,19 @@ public class ThermalPrinterService {
         printService = PrinterOutputStream.getPrintServiceByName(properties.getPrinterName());
         return printService;
     }
-    public void printInfo(){
-        //this call is slow, try to use it only once and reuse the PrintService variable.
-        PrintService printService = getPrintService();
-        log.info("Get printer by name: {}", printService.getName());
-        try {
-            PrinterOutputStream printerOutputStream = new PrinterOutputStream(printService);
-            EscPos escpos = new EscPos(printerOutputStream);
-            log.info("Printing receipt");
-            escpos.writeLF("test");
-            // do not forget to close...
-            escpos.close();
 
-        } catch (IOException ex) {
-            Logger.getLogger(ParagonApplication.class.getName()).log(Level.SEVERE, null, ex);
-        }
-
-    }
 
 
     ArrayList<ArrayList<Object>> discardEmpty(ArrayList<ArrayList<Object>> data){
         ArrayList<ArrayList<Object>> result = new ArrayList<>();
         for(ArrayList<Object> range : data) {
-            if(range.size() < 1) break;
-            if(range.get(0).toString().length() > 0) result.add(range);
-            if(range.size() > 1 && range.get(1).toString().length() > 0) result.add(range);
+            if(range.size() >=1 && range.get(0).toString().length() > 0) {
+                result.add(range);
+            }else if(range.size() >= 2 && range.get(1).toString().length() > 0) {
+                result.add(range);
+            }
         }
-
+        log.info("non empty data: {}", result);
         return result;
     }
     /*
@@ -72,42 +64,162 @@ public class ThermalPrinterService {
                 result.add(newRange);
             }
         }
-
+        log.info("Headers: {}", result);
         return result;
     }
 
     ArrayList<ArrayList<Object>> extractValues(ArrayList<ArrayList<Object>> data){
         ArrayList<ArrayList<Object>> result = new ArrayList<>();
         for(ArrayList<Object> range : data){
-            if(range.size() > 1)
-                if(range.get(1) instanceof Integer || range.get(1) instanceof Float || range.get(1) instanceof Double){
+            if(range.size() > 1) {
+                if (range.get(1) instanceof Integer) {
                     ArrayList<Object> newRange = new ArrayList<>();
                     newRange.add(range.get(0));
-                    newRange.add(range.get(1));
+                    newRange.add(BigDecimal.valueOf((Integer) range.get(1)));
                     result.add(newRange);
                 }
+                if (range.get(1) instanceof Float) {
+                    ArrayList<Object> newRange = new ArrayList<>();
+                    newRange.add(range.get(0));
+                    newRange.add(BigDecimal.valueOf((Float) range.get(1)));
+                    result.add(newRange);
+                }
+                if (range.get(1) instanceof Double) {
+                    ArrayList<Object> newRange = new ArrayList<>();
+                    newRange.add(range.get(0));
+                    newRange.add(BigDecimal.valueOf((Double) range.get(1)));
+                    result.add(newRange);
+                }
+            }
         }
-
+        log.info("Products: {}", result);
         return result;
     }
 
-    Float sumValues(ArrayList<ArrayList<Object>> extractedValues){
-        Float sum = 0.0F;
+    BigDecimal sumValues(ArrayList<ArrayList<Object>> extractedValues){
+        BigDecimal sum = BigDecimal.valueOf(0);
         for(ArrayList<Object> range : extractedValues){
-            sum += (Float)range.get(1);
+            BigDecimal productCost = (BigDecimal) range.get(1);
+            sum = sum.add(productCost);
         }
+        log.info("Products total costs: {}", sum);
         return sum;
     }
 
+    private EscPos printHeaders(EscPos escpos, ArrayList<ArrayList<String>> headers) throws IOException {
+        Style subtitle = new Style()
+                .setFontSize(Style.FontSize._1, Style.FontSize._1)
+                ;
+        Style boldSubtitle = new Style()
+                .setFontSize(Style.FontSize._2, Style.FontSize._1)
+                .setBold(true);
 
+        for(ArrayList<String> headerPair : headers){
+            escpos.writeLF(subtitle, headerPair.get(0) + ": ")
+                    .writeLF(boldSubtitle, headerPair.get(1));
+        }
+        return escpos;
+    }
+    private EscPos printProducts(EscPos escpos, ArrayList<ArrayList<Object>> extractedValues) throws IOException {
+        Style normalRight = new Style(escpos.getStyle()).setJustification(EscPosConst.Justification.Right);
+        Style normalLeft = new Style(escpos.getStyle()).setJustification(EscPosConst.Justification.Left_Default);
+
+        for(ArrayList<Object> productAndCost : extractedValues){
+            printOneLineProduct(escpos, productAndCost.get(0).toString(),
+                    String.format("%.2f zł",(BigDecimal)productAndCost.get(1)),
+                    normalLeft);
+        }
+
+        return escpos;
+    }
+    private void printOneLineProduct(EscPos escpos, String left, String right, Style style) throws IOException {
+        int spacesNum = properties.getMaxCharsInLine() - left.length() - right.length();
+        StringBuilder spaces = new StringBuilder();
+        while(spaces.length() < spacesNum){
+            spaces.append(" ");
+        }
+        escpos.writeLF(style, left + spaces + right);
+    }
 
     public void print(ArrayList<ArrayList<Object>> data){
+        if(data == null) return;
+
         //this call is slow, try to use it only once and reuse the PrintService variable.
         PrintService printService = getPrintService();
         ArrayList<ArrayList<Object>> notEmptyData = discardEmpty(data);
         ArrayList<ArrayList<String>> headers = extractHeaders(notEmptyData);
         ArrayList<ArrayList<Object>> values = extractValues(notEmptyData);
-        Float valuseSum = sumValues(values);
+        BigDecimal valuesSum = sumValues(values);
+
+
+        EscPos escpos;
+        try {
+            escpos = new EscPos(new PrinterOutputStream(printService));
+
+            Style boldRight = new Style(escpos.getStyle())
+                    .setJustification(EscPosConst.Justification.Right)
+                    .setBold(true);
+            Style boldLeft = new Style(escpos.getStyle())
+                    .setJustification(EscPosConst.Justification.Left_Default)
+                    .setBold(true);
+
+            Style title = new Style()
+                    .setFontSize(Style.FontSize._2, Style.FontSize._2)
+                    .setJustification(EscPosConst.Justification.Center);
+
+            Style subtitle = new Style(escpos.getStyle())
+                    .setBold(true)
+                    .setUnderline(Style.Underline.OneDotThick);
+            Style bold = new Style(escpos.getStyle())
+                    .setBold(true);
+
+            //escpos.setPrinterCharacterTable(76); //PC3843 (Polish)
+            //32 characters width
+
+            //escpos.setCharsetName("UTF-16");
+            log.info("Default charset name: {}", escpos.getDefaultCharsetName());
+
+            escpos.setCharsetName("cp852");
+            escpos.setPrinterCharacterTable(18);
+
+
+            escpos.writeLF(title,"Polecam - Joanna Plebaniak")
+                    .feed(2);
+            printHeaders(escpos,headers)
+                    .feed(2);
+            printProducts(escpos, values)
+                    .writeLF("--------------------------------")
+                    .feed(1);
+            printOneLineProduct(escpos, "SUMA: ",String.format("%.2f zł", valuesSum), boldLeft);
+            escpos.writeLF("--------------------------------")
+                    .feed(1);
+
+            //qr code:
+            QRCode qrcode = new QRCode();
+
+            escpos.writeLF("Zapraszam na stronę: ");
+            escpos.feed(1);
+            qrcode.setSize(7);
+            qrcode.setJustification(EscPosConst.Justification.Center);
+            escpos.write(qrcode, "https://www.facebook.com/polecam.joanna.plebaniak");
+            escpos.feed(4);
+
+
+//                    .write("Client: ")
+//                    .writeLF(subtitle, "John Doe")
+//                    .feed(2)
+//                    .writeLF("Cup of coffee                      $1.00")
+//                    .writeLF("Botle of water                     $0.50")
+//                    .writeLF("---------------------------------------------")
+//                    .feed(1)
+//
+            escpos.cut(EscPos.CutMode.FULL);
+            escpos.close();
+
+        } catch (IOException ex) {
+            log.error("Exception while printing: {}", ex.getMessage());
+            ex.printStackTrace();
+        }
 
     }
 }

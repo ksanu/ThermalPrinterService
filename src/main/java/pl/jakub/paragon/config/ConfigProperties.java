@@ -9,4 +9,5 @@ import org.springframework.context.annotation.Configuration;
 @Data
 public class ConfigProperties {
     private String printerName;
+    private Integer maxCharsInLine;
 }

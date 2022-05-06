@@ -1,19 +1,27 @@
 package pl.jakub.paragon.controller;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import pl.jakub.paragon.service.ThermalPrinterService;
 
 import java.util.ArrayList;
 import java.util.Map;
 
+@Slf4j
 @RestController
 public class PrintReceiver {
+
+    @Autowired
+    ThermalPrinterService thermalPrinterService;
+
 
     @CrossOrigin
     @RequestMapping(
             value = "/print",
             method = RequestMethod.POST)
     public String print(@RequestBody Map<String, Object> payload){
-        System.out.println(payload);
+        log.info("Received payload: {}", payload);
         Object data = payload.get("data");
         System.out.println(data.getClass());
         ArrayList<ArrayList<Object>> arrayOfRanges = null;
@@ -21,10 +29,8 @@ public class PrintReceiver {
             arrayOfRanges = (ArrayList<ArrayList<Object>>) data;
 
         }
-        System.out.println(arrayOfRanges.get(0).getClass());
-        System.out.println(arrayOfRanges.get(0).get(0).getClass());
-        System.out.println(arrayOfRanges.get(0).get(1).getClass());
-        System.out.println(arrayOfRanges.get(1).get(1).getClass());
+
+        thermalPrinterService.print(arrayOfRanges);
 
 
         return "ok";

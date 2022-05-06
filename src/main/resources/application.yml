@@ -3,3 +3,4 @@ server.port: 8080
 
 paragon:
   printerName: POS-58-Series
+  maxCharsInLine: 31
